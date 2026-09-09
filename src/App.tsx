@@ -18,7 +18,7 @@ export default function App() {
   const [showTypeInput, setShowTypeInput] = useState(false);
   const [mouthShape, setMouthShape] = useState<MouthShape>({ open: 0, width: 0.18, round: 0, teeth: 0 });
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([
-    newEntry("system", "Ricky is ready. Connect voice, then talk naturally."),
+    newEntry("system", "Jarvis is ready. Connect voice, then talk naturally."),
   ]);
   const [status, setStatus] = useState("Idle");
   const [textPrompt, setTextPrompt] = useState("");
@@ -28,7 +28,10 @@ export default function App() {
 
   async function connect() {
     const client = new RickyRealtimeClient({
-      onConnectionState: setConnectionState,
+      onConnectionState: (state) => {
+        setConnectionState(state);
+        if (state === "error") setShowLog(true);
+      },
       onMood: setMood,
       onMouthShape: setMouthShape,
       onTranscript: (entry) => setTranscript((items) => [entry, ...items].slice(0, 80)),
@@ -51,6 +54,7 @@ export default function App() {
       onStatus: (message) => {
         setStatus(message);
         setTranscript((items) => [newEntry("system", message), ...items].slice(0, 80));
+        if (/fail|error|missing|denied/i.test(message)) setShowLog(true);
       },
       onThumbnailReady: playThumbnailReadySound,
     });
@@ -124,7 +128,7 @@ export default function App() {
                   if (event.key === "Enter") sendTextPrompt();
                 }}
                 autoFocus
-                placeholder="Type to Ricky..."
+                placeholder="Type to Jarvis..."
               />
               <button onClick={sendTextPrompt} aria-label="Send typed prompt" title="Send typed prompt">
                 <Send size={15} />
@@ -145,8 +149,8 @@ export default function App() {
             <button
               className={showTypeInput ? "simple-button active" : "simple-button"}
               onClick={() => setShowTypeInput((value) => !value)}
-              aria-label="Type to Ricky"
-              title="Type to Ricky"
+              aria-label="Type to Jarvis"
+              title="Type to Jarvis"
             >
               <Keyboard size={16} />
             </button>
@@ -183,6 +187,22 @@ export default function App() {
               <History size={16} />
             </button>
           </section>
+
+          <p
+            className={`connection-status connection-status-${connectionState}`}
+            role="status"
+            aria-live="polite"
+          >
+            {connectionState === "connected"
+              ? "Live — talk naturally (mic once was enough)"
+              : connectionState === "connecting"
+                ? "Connecting…"
+                : connectionState === "error"
+                  ? status
+                  : status === "Idle"
+                    ? "Click mic once to connect · ⌘⇧J to summon window"
+                    : status}
+          </p>
         </footer>
 
         {showLog ? (

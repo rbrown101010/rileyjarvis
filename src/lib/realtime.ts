@@ -103,7 +103,7 @@ export class RickyRealtimeClient {
       dc.addEventListener("open", () => {
         this.callbacks.onConnectionState("connected");
         this.callbacks.onMood("idle");
-        this.callbacks.onStatus("Ricky is live. Start talking naturally.");
+        this.callbacks.onStatus("Jarvis is live. Start talking naturally.");
       });
       dc.addEventListener("message", (event) => {
         void this.handleServerEvent(event.data);

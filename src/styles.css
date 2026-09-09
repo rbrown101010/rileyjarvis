@@ -374,6 +374,36 @@ button:disabled {
   gap: 6px;
 }
 
+.connection-status {
+  margin: 8px 0 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  color: rgba(232, 235, 245, 0.82);
+  background: rgba(8, 12, 18, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+  -webkit-app-region: no-drag;
+}
+
+.connection-status-connected {
+  color: #b8ffe0;
+  border-color: rgba(120, 255, 190, 0.28);
+}
+
+.connection-status-connecting {
+  color: #ffe7a8;
+  border-color: rgba(255, 220, 120, 0.28);
+}
+
+.connection-status-error {
+  color: #ffc0c8;
+  border-color: rgba(255, 120, 140, 0.35);
+}
+
 .simple-button {
   width: 34px;
   height: 30px;
