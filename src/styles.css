@@ -18,6 +18,11 @@ body {
   background: transparent;
 }
 
+body:has(.logistics-app) {
+  overflow: auto;
+  background: #08090d;
+}
+
 button,
 input {
   font: inherit;
@@ -370,7 +375,7 @@ button:disabled {
 .control-strip {
   display: grid;
   width: max-content;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1241,4 +1246,240 @@ td {
     transform: translateY(-100%);
     opacity: 0;
   }
+}
+
+.logistics-app {
+  min-height: 100vh;
+  overflow: auto;
+  padding: 28px 28px 40px;
+  background:
+    radial-gradient(circle at top left, rgba(86, 189, 255, 0.12), transparent 34%),
+    #08090d;
+  color: #f6f7fb;
+}
+
+.logistics-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding-top: 8px;
+}
+
+.logistics-kicker,
+.logistics-section .section-title span,
+.logistics-section .section-title small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.logistics-kicker {
+  margin: 0 0 6px;
+  color: #7ddfff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.logistics-hero h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: -0.05em;
+}
+
+.logistics-hero p {
+  margin: 6px 0 0;
+  color: #a6abb9;
+  max-width: 640px;
+}
+
+.logistics-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logistics-hero-stats div {
+  min-width: 76px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.logistics-hero-stats strong,
+.logistics-speed span {
+  display: block;
+  font-size: 18px;
+  letter-spacing: -0.04em;
+}
+
+.logistics-hero-stats span,
+.logistics-speed small,
+.logistics-drive small,
+.logistics-port small,
+.logistics-volume small {
+  color: #8b91a3;
+  font-size: 11px;
+}
+
+.logistics-section {
+  margin-top: 18px;
+}
+
+.logistics-port-grid,
+.logistics-drive-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.logistics-port-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.logistics-drive-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.logistics-port,
+.logistics-drive {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(11, 12, 18, 0.92);
+}
+
+.logistics-port header,
+.logistics-drive header,
+.logistics-volume-row,
+.logistics-hero-stats,
+.logistics-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.logistics-port h3,
+.logistics-drive h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.04em;
+}
+
+.logistics-drive p,
+.logistics-empty,
+.logistics-flag,
+.logistics-limits p,
+.logistics-error {
+  margin: 6px 0 0;
+  color: #a6abb9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.logistics-tree {
+  margin: 10px 0 0;
+  padding-left: 14px;
+  border-left: 1px solid rgba(125, 223, 255, 0.18);
+  list-style: none;
+}
+
+.logistics-device {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.logistics-device code {
+  color: #7ddfff;
+  font-size: 10px;
+}
+
+.logistics-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin: 12px 0;
+}
+
+.logistics-meta dt {
+  color: #8b91a3;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.logistics-meta dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.logistics-bar {
+  height: 6px;
+  margin: 6px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.logistics-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #56bdff, #b8ffe0);
+}
+
+.logistics-pill {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.logistics-health-green {
+  border-color: rgba(120, 255, 190, 0.28);
+}
+
+.logistics-pill.logistics-health-green,
+.logistics-hero-stats .logistics-health-green strong {
+  color: #b8ffe0;
+}
+
+.logistics-health-yellow {
+  border-color: rgba(255, 220, 120, 0.32);
+}
+
+.logistics-pill.logistics-health-yellow,
+.logistics-flag.logistics-health-yellow,
+.logistics-hero-stats .logistics-health-yellow strong {
+  color: #ffe7a8;
+}
+
+.logistics-health-red {
+  border-color: rgba(255, 120, 140, 0.4);
+}
+
+.logistics-pill.logistics-health-red,
+.logistics-flag.logistics-health-red,
+.logistics-error,
+.logistics-hero-stats .logistics-health-red strong {
+  color: #ffc0c8;
+}
+
+.logistics-limits {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.logistics-volume {
+  margin-top: 10px;
 }

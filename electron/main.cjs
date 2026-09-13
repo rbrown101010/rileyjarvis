@@ -5,6 +5,7 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const dotenv = require("dotenv");
+const { collectLogisticsSnapshot } = require("./logistics.cjs");
 
 dotenv.config({ path: path.join(process.cwd(), ".env.local") });
 
@@ -24,8 +25,13 @@ const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "ricky-db.json");
 let currentMode = "display";
 let mainWindow = null;
+let logisticsWindow = null;
 let normalWindowBounds = null;
 let dbWriteQueue = Promise.resolve();
+
+function wantsLogisticsWindow(argv = process.argv) {
+  return argv.includes("--logistics") || process.env.JARVIS_LOGISTICS === "1";
+}
 
 function summonMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -557,6 +563,58 @@ async function createWindow() {
   }
 }
 
+function logisticsUrl() {
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) return `${devUrl}#/logistics`;
+  return null;
+}
+
+async function createLogisticsWindow() {
+  if (logisticsWindow && !logisticsWindow.isDestroyed()) {
+    if (logisticsWindow.isMinimized()) logisticsWindow.restore();
+    logisticsWindow.show();
+    logisticsWindow.focus();
+    return logisticsWindow;
+  }
+
+  const win = new BrowserWindow({
+    width: 1320,
+    height: 900,
+    minWidth: 880,
+    minHeight: 640,
+    title: "Jarvis Logistics",
+    backgroundColor: "#08090d",
+    show: false,
+    icon: nativeImage.createEmpty(),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  logisticsWindow = win;
+
+  win.once("ready-to-show", () => {
+    win.show();
+    win.focus();
+  });
+  win.on("closed", () => {
+    if (logisticsWindow === win) logisticsWindow = null;
+  });
+
+  const devUrl = logisticsUrl();
+  if (devUrl) {
+    await win.loadURL(devUrl);
+  } else {
+    await win.loadFile(path.join(process.cwd(), "dist", "index.html"), { hash: "/logistics" });
+  }
+  if (!win.isDestroyed() && !win.isVisible()) {
+    win.show();
+    win.focus();
+  }
+  return win;
+}
+
 function setWindowMode(mode) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -598,6 +656,13 @@ function setWindowMode(mode) {
 }
 
 ipcMain.handle("tools:list", () => toolSpecs);
+
+ipcMain.handle("logistics:snapshot", async () => collectLogisticsSnapshot());
+
+ipcMain.handle("logistics:open-window", async () => {
+  await createLogisticsWindow();
+  return true;
+});
 
 ipcMain.handle("realtime:create-token", async () => {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -1589,19 +1654,30 @@ function fallbackMermaidDiagram(title) {
 }
 
 if (gotSingleInstanceLock) {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    if (wantsLogisticsWindow(argv)) {
+      void createLogisticsWindow();
+      return;
+    }
     if (!summonMainWindow()) {
       void createWindow();
     }
   });
 
   app.whenReady().then(async () => {
-    await createWindow();
+    if (wantsLogisticsWindow()) {
+      await createLogisticsWindow();
+    } else {
+      await createWindow();
+    }
     // Cmd+Shift+J summons Jarvis above the pile of windows.
     globalShortcut.register("CommandOrControl+Shift+J", () => {
       if (!summonMainWindow()) {
         void createWindow();
       }
+    });
+    globalShortcut.register("CommandOrControl+Shift+L", () => {
+      void createLogisticsWindow();
     });
   });
 
@@ -1615,9 +1691,12 @@ if (gotSingleInstanceLock) {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow();
-    } else {
+      if (wantsLogisticsWindow()) void createLogisticsWindow();
+      else void createWindow();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
       summonMainWindow();
+    } else {
+      void createLogisticsWindow();
     }
   });
 }

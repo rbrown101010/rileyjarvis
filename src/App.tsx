@@ -1,13 +1,19 @@
-import { useRef, useState } from "react";
-import { BrainCircuit, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BrainCircuit, Cable, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send } from "lucide-react";
 import { ArtifactPanel } from "./components/ArtifactPanel";
 import { RickyFace } from "./components/RickyFace";
+import { LogisticsDashboard } from "./logistics/LogisticsDashboard";
 import { newEntry, RickyRealtimeClient, type MouthShape, type RickyConnectionState, type RickyMood, type TranscriptEntry } from "./lib/realtime";
 import type { RickyArtifact } from "./vite-env";
+
+function isLogisticsHash() {
+  return window.location.hash.replace(/^#/, "") === "/logistics";
+}
 
 type RickyMode = "display" | "computer";
 
 export default function App() {
+  const [logisticsView, setLogisticsView] = useState(isLogisticsHash);
   const [connectionState, setConnectionState] = useState<RickyConnectionState>("idle");
   const [mood, setMood] = useState<RickyMood>("idle");
   const [mode, setMode] = useState<RickyMode>("display");
@@ -25,6 +31,16 @@ export default function App() {
   const clientRef = useRef<RickyRealtimeClient | null>(null);
 
   const isConnected = connectionState === "connected";
+
+  useEffect(() => {
+    const onHashChange = () => setLogisticsView(isLogisticsHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  if (logisticsView) {
+    return <LogisticsDashboard />;
+  }
 
   async function connect() {
     const client = new RickyRealtimeClient({
@@ -185,6 +201,14 @@ export default function App() {
               title="Toggle live log"
             >
               <History size={16} />
+            </button>
+            <button
+              className="simple-button"
+              onClick={() => void window.ricky.openLogisticsWindow()}
+              aria-label="Open logistics dashboard"
+              title="Open logistics dashboard"
+            >
+              <Cable size={16} />
             </button>
           </section>
 
