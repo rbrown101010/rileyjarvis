@@ -1,26 +1,58 @@
-const { app, BrowserWindow, ipcMain, nativeImage, screen } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, nativeImage, screen } = require("electron");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const dotenv = require("dotenv");
+const { collectLogisticsSnapshot } = require("./logistics.cjs");
 
 dotenv.config({ path: path.join(process.cwd(), ".env.local") });
+
+// Keep one Jarvis only — second launches focus the existing window instead of stacking.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+app.setName("Jarvis");
+if (process.platform === "darwin" && app.dock) {
+  app.dock.setBadge("");
+}
 
 const execFileAsync = promisify(execFile);
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "ricky-db.json");
 let currentMode = "display";
 let mainWindow = null;
+let logisticsWindow = null;
 let normalWindowBounds = null;
 let dbWriteQueue = Promise.resolve();
 
+function wantsLogisticsWindow(argv = process.argv) {
+  return argv.includes("--logistics") || process.env.JARVIS_LOGISTICS === "1";
+}
+
+function summonMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  // Keep Jarvis floating so it does not vanish under Cursor / browser clutter.
+  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.moveTop();
+  return true;
+}
+
 const RICKY_INSTRUCTIONS = `# Role and Objective
-You are Ricky, Riley's desktop AI operator. You speak through realtime voice and can use local tools.
+You are Jarvis — an Iron Man–style British AI butler for the desktop. You speak through realtime voice and can use local tools. Address the user as "sir" sparingly, when it fits.
 
 # Personality and Tone
-Concise, calm, useful. Use a confident man's voice. Talk like a smart operator, not a chatbot.
+British Received Pronunciation. Calm, precise, slightly formal — never chirpy, never American-casual.
+Short well-composed sentences. Dry understated wit is welcome; sycophancy is not.
+Speak like Paul Bettany's JARVIS: competent, measured, quietly wry. Not a chatbot, not a sports announcer.
+Pace: deliberate. Avoid filler ("Certainly!", "Of course!", "Great question!").
 
 # Modes
 - Display mode is the default. Use the app and artifact panel to show things. Do not control the computer.
@@ -28,14 +60,14 @@ Concise, calm, useful. Use a confident man's voice. Talk like a smart operator, 
 
 # Tool Behavior
 - Use read-only tools when the user's intent is clear.
-- When Riley says "show me the menu", "show me what I can do", or asks what Ricky can do, call show_menu immediately.
+- When sir says "show me the menu", "show me what I can do", or asks what Jarvis can do, call show_menu immediately.
 - For web search, notes, charts, records, image generation, and artifact display, act directly when the request is clear.
-- For thumbnail creation/editing, always use the thumbnail board tools, never generic image_generate and never artifact_show with imageLoading. Generate exactly one 16:9 image per request. Never generate multiple unless Riley separately asks again. Every generate/edit request gets a permanent database number that never changes, like #18 then #19 then #20. Do not renumber visible grid positions. Show paginated 3x3 pages of the permanent numbers. Do not show a standalone fullscreen loading animation for thumbnails. Use Riley's wording literally: do not invent elaborate extra concepts, fake text, or extra thumbnail ideas. For edits, use the exact existing numbered/selected image as input and make only the requested change.
-- The thumbnail board persists across sessions. If Riley references thumbnail #N, trust that permanent number and call the matching thumbnail tool. Do not say you cannot see old thumbnails. Use thumbnail_grid to refresh state or change pages if needed.
+- For thumbnail creation/editing, always use the thumbnail board tools, never generic image_generate and never artifact_show with imageLoading. Generate exactly one 16:9 image per request. Never generate multiple unless sir separately asks again. Every generate/edit request gets a permanent database number that never changes, like #18 then #19 then #20. Do not renumber visible grid positions. Show paginated 3x3 pages of the permanent numbers. Do not show a standalone fullscreen loading animation for thumbnails. Use sir's wording literally: do not invent elaborate extra concepts, fake text, or extra thumbnail ideas. For edits, use the exact existing numbered/selected image as input and make only the requested change.
+- The thumbnail board persists across sessions. If sir references thumbnail #N, trust that permanent number and call the matching thumbnail tool. Do not say you cannot see old thumbnails. Use thumbnail_grid to refresh state or change pages if needed.
 - When a thumbnail finishes generating or editing, do not announce it verbally. The UI updates silently.
 - For sending messages, deleting data, buying things, account changes, sharing private information, or anything irreversible, summarize the action and ask for explicit confirmation before calling the modifying tool.
 - If a tool requires a confirmed field, set confirmed to true only after the user clearly confirms.
-- Typing text and pressing Enter/Return in computer use mode are allowed without extra approval when Riley asks you to type or send a prompt. Ask first before clicking controls or taking actions that delete, purchase, change settings, or expose private information.
+- Typing text and pressing Enter/Return in computer use mode are allowed without extra approval when sir asks you to type or send a prompt. Ask first before clicking controls or taking actions that delete, purchase, change settings, or expose private information.
 - Explain what you are doing in one short sentence before longer tool work. Do not over-explain.
 
 # Artifacts
@@ -49,7 +81,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "set_mode",
-    description: "Switch Ricky between display mode and computer use mode.",
+    description: "Switch Jarvis between display mode and computer use mode.",
     parameters: {
       type: "object",
       properties: {
@@ -79,7 +111,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "show_menu",
-    description: "Show Ricky's capability menu in the artifact panel. Call this when the user asks 'show me the menu', 'show me what I can do', or asks what Ricky can do.",
+    description: "Show Jarvis's capability menu in the artifact panel. Call this when the user asks 'show me the menu', 'show me what I can do', or asks what Jarvis can do.",
     parameters: {
       type: "object",
       properties: {},
@@ -117,7 +149,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "thumbnail_reference_add",
-    description: "Add a local image file as a reference image for making thumbnails of Riley. Use when Riley gives a file path to a photo of himself.",
+    description: "Add a local image file as a reference image for making thumbnails of sir. Use when sir gives a file path to a photo of himself.",
     parameters: {
       type: "object",
       properties: {
@@ -131,7 +163,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "thumbnail_generate",
-    description: "Generate exactly one 16:9 YouTube thumbnail into Ricky's persistent paginated thumbnail board. Uses Riley reference images if available. Assigns a new permanent number that never changes. Never generate multiple at once.",
+    description: "Generate exactly one 16:9 YouTube thumbnail into Jarvis's persistent paginated thumbnail board. Uses sir reference images if available. Assigns a new permanent number that never changes. Never generate multiple at once.",
     parameters: {
       type: "object",
       properties: {
@@ -144,7 +176,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "thumbnail_edit",
-    description: "Edit one existing thumbnail by permanent thumbnail number, or edit the currently selected thumbnail if number is omitted. Use this whenever Riley says 'edit number 20' or 'edit this'. The edited result gets a new permanent number.",
+    description: "Edit one existing thumbnail by permanent thumbnail number, or edit the currently selected thumbnail if number is omitted. Use this whenever sir says 'edit number 20' or 'edit this'. The edited result gets a new permanent number.",
     parameters: {
       type: "object",
       properties: {
@@ -158,7 +190,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "thumbnail_select",
-    description: "Select a permanent numbered thumbnail and show it fullscreen. Use when Riley says 'pull up number 20', 'show number 20', 'open number 20', or 'select number 20'.",
+    description: "Select a permanent numbered thumbnail and show it fullscreen. Use when sir says 'pull up number 20', 'show number 20', 'open number 20', or 'select number 20'.",
     parameters: {
       type: "object",
       properties: {
@@ -171,7 +203,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "thumbnail_grid",
-    description: "Show one paginated 3x3 page of the persistent thumbnail board and return compact board state. Use to refresh state, change pages, or when Riley asks what thumbnails exist.",
+    description: "Show one paginated 3x3 page of the persistent thumbnail board and return compact board state. Use to refresh state, change pages, or when sir asks what thumbnails exist.",
     parameters: {
       type: "object",
       properties: {
@@ -197,7 +229,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "note_add",
-    description: "Add a note to Ricky's fun local notes list.",
+    description: "Add a note to Jarvis's local notes list.",
     parameters: {
       type: "object",
       properties: {
@@ -452,7 +484,7 @@ function requireComputerMode() {
     return {
       ok: false,
       needsMode: "computer",
-      message: "Computer control is disabled. Ask Ricky to switch to computer use mode first.",
+      message: "Computer control is disabled. Ask Jarvis to switch to computer use mode first.",
     };
   }
   return null;
@@ -490,10 +522,11 @@ async function createWindow() {
     height: 760,
     minWidth: 420,
     minHeight: 520,
-    title: "Ricky",
+    title: "Jarvis",
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
+    show: false,
     icon: nativeImage.createEmpty(),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -507,12 +540,79 @@ async function createWindow() {
     callback(permission === "media");
   });
 
+  win.once("ready-to-show", () => {
+    win.center();
+    summonMainWindow();
+  });
+
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
     await win.loadURL(devUrl);
   } else {
     await win.loadFile(path.join(process.cwd(), "dist", "index.html"));
   }
+
+  // Fallback if ready-to-show already fired before the listener attached.
+  if (!win.isDestroyed() && !win.isVisible()) {
+    win.center();
+    summonMainWindow();
+  }
+}
+
+function logisticsUrl() {
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) return `${devUrl}#/logistics`;
+  return null;
+}
+
+async function createLogisticsWindow() {
+  if (logisticsWindow && !logisticsWindow.isDestroyed()) {
+    if (logisticsWindow.isMinimized()) logisticsWindow.restore();
+    logisticsWindow.show();
+    logisticsWindow.focus();
+    return logisticsWindow;
+  }
+
+  const win = new BrowserWindow({
+    width: 1320,
+    height: 900,
+    minWidth: 880,
+    minHeight: 640,
+    title: "Jarvis Logistics",
+    backgroundColor: "#08090d",
+    show: false,
+    icon: nativeImage.createEmpty(),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  logisticsWindow = win;
+
+  win.once("ready-to-show", () => {
+    win.show();
+    win.focus();
+  });
+  win.on("closed", () => {
+    if (logisticsWindow === win) logisticsWindow = null;
+  });
+
+  const devUrl = logisticsUrl();
+  if (devUrl) {
+    await win.loadURL(devUrl);
+  } else {
+    await win.loadFile(path.join(process.cwd(), "dist", "index.html"), { hash: "/logistics" });
+  }
+  if (!win.isDestroyed() && !win.isVisible()) {
+    win.show();
+    win.focus();
+  }
+  return win;
 }
 
 function setWindowMode(mode) {
@@ -541,8 +641,9 @@ function setWindowMode(mode) {
     return;
   }
 
-  mainWindow.setAlwaysOnTop(false);
-  mainWindow.setVisibleOnAllWorkspaces(false);
+  // Stay floating in display mode so Jarvis does not vanish under Cursor / browser clutter.
+  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.setResizable(true);
   mainWindow.setMinimumSize(420, 520);
   if (normalWindowBounds) {
@@ -551,9 +652,17 @@ function setWindowMode(mode) {
     mainWindow.setBounds({ width: 1120, height: 760 });
     mainWindow.center();
   }
+  summonMainWindow();
 }
 
 ipcMain.handle("tools:list", () => toolSpecs);
+
+ipcMain.handle("logistics:snapshot", async () => collectLogisticsSnapshot());
+
+ipcMain.handle("logistics:open-window", async () => {
+  await createLogisticsWindow();
+  return true;
+});
 
 ipcMain.handle("realtime:create-token", async () => {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -589,11 +698,14 @@ ipcMain.handle("realtime:create-token", async () => {
             },
           },
           output: {
-            voice: "cedar",
+            // Closest stock Realtime male to classic JARVIS vibe (British manner comes from instructions).
+            // Alternatives: cedar/marin = highest fidelity; ash/verse = more expressive.
+            // Exact Paul Bettany clone needs ElevenLabs/custom — not configured (no paid clone).
+            voice: "echo",
           },
         },
         tracing: {
-          workflow_name: "Ricky Desktop Companion",
+          workflow_name: "Jarvis Desktop Companion",
         },
       },
     }),
@@ -624,7 +736,7 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
         ok: true,
         mode: currentMode,
         artifact: {
-          title: "Ricky Mode",
+          title: "Jarvis Mode",
           kind: "progress",
           content: `Mode switched to ${currentMode === "computer" ? "computer use" : "display"} mode.`,
         },
@@ -639,7 +751,7 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       return {
         ok: true,
         artifact: {
-          title: "Ricky Menu",
+          title: "Jarvis Menu",
           kind: "markdown",
           content: buildMenuMarkdown(),
         },
@@ -859,7 +971,7 @@ async function webSearch(args) {
     return {
       ok: false,
       missingEnv: "EXA_API_KEY",
-      message: "EXA_API_KEY is not set. Add it to .env.local to enable Ricky's web search tool.",
+      message: "EXA_API_KEY is not set. Add it to .env.local to enable Jarvis's web search tool.",
     };
   }
 
@@ -896,7 +1008,7 @@ async function webSearch(args) {
 function formatSearchMarkdown(query, results) {
   const cleanQuery = query.trim() || "Search";
   if (results.length === 0) {
-    return `# ${cleanQuery}\n\nNo strong web results came back for this search. Try a narrower query or ask Ricky to search a specific site.`;
+    return `# ${cleanQuery}\n\nNo strong web results came back for this search. Try a narrower query or ask Jarvis to search a specific site.`;
   }
 
   const sections = results.slice(0, 8).map((result, index) => {
@@ -910,7 +1022,7 @@ function formatSearchMarkdown(query, results) {
     return `### ${index + 1}. ${title}\n\n${text || "No snippet was returned for this result."}\n\n- Source: ${source}${published}\n- ${link}`;
   });
 
-  return [`# ${cleanQuery}`, `Ricky found ${results.length} source${results.length === 1 ? "" : "s"}.`, ...sections].join(
+  return [`# ${cleanQuery}`, `Jarvis found ${results.length} source${results.length === 1 ? "" : "s"}.`, ...sections].join(
     "\n\n",
   );
 }
@@ -931,13 +1043,13 @@ function hostname(url) {
 }
 
 function buildMenuMarkdown() {
-  return `# Ricky Menu
+  return `# Jarvis Menu
 
 Here is what you can ask me to do.
 
 ## Voice and Conversation
 
-- Talk naturally with Ricky in realtime.
+- Talk naturally with Jarvis in realtime.
 - Interrupt mid-response and ask follow-ups.
 - Ask unrelated questions while tools keep running.
 
@@ -962,14 +1074,14 @@ Here is what you can ask me to do.
 
 ## Notes and Records
 
-- Add notes to Ricky's local note grid.
+- Add notes to Jarvis's local note grid.
 - Create, search, update, and confirm-delete local database records.
 
 ## Computer Use Mode
 
 - "Switch to computer use mode."
 - Open apps, click, type, press Enter/Return, scroll, inspect the UI, and take screen snapshots.
-- Ricky asks before risky actions like sending, deleting, buying, changing settings, or sharing private info.
+- Jarvis asks before risky actions like sending, deleting, buying, changing settings, or sharing private info.
 
 ## Good Starter Prompts
 
@@ -1310,7 +1422,7 @@ function thumbnailRecord(image, prompt, type, size) {
 
 function thumbnailPrompt(prompt, hasReferences) {
   return [
-    hasReferences ? "Use the provided reference image(s) of Riley as the identity reference." : "",
+    hasReferences ? "Use the provided reference image(s) of sir as the identity reference." : "",
     "Create one 16:9 YouTube thumbnail.",
     "Follow this request literally. Do not add extra concepts, fake UI, extra text, watermarks, or unrelated elements.",
     prompt,
@@ -1451,7 +1563,7 @@ Next new thumbnail number: ${summary.page.nextNumber}
 Visible permanent thumbnail numbers:
 ${imageLines}
 
-When Riley says "pull up number N", "select N", or "show N", call thumbnail_select with that permanent number. When Riley says "edit this", use thumbnail_edit with no number if a selected thumbnail number exists. When Riley says "edit number N", call thumbnail_edit with that permanent number. When he asks for older thumbnails or another page, call thumbnail_grid with the requested page. Do not claim you cannot see prior thumbnails; this board state is persistent and paginated.`;
+When sir says "pull up number N", "select N", or "show N", call thumbnail_select with that permanent number. When sir says "edit this", use thumbnail_edit with no number if a selected thumbnail number exists. When sir says "edit number N", call thumbnail_edit with that permanent number. When sir asks for older thumbnails or another page, call thumbnail_grid with the requested page. Do not claim you cannot see prior thumbnails; this board state is persistent and paginated.`;
 }
 
 async function thumbnailBoardArtifact(db, view) {
@@ -1538,17 +1650,53 @@ function normalizeMermaidDiagram(diagram, title) {
 
 function fallbackMermaidDiagram(title) {
   const safeTitle = String(title || "Chart").replace(/["<>]/g, "");
-  return `flowchart TD\n  A["${safeTitle}"] --> B["Chart request received"]\n  B --> C["Ricky will show a safe fallback if syntax fails"]`;
+  return `flowchart TD\n  A["${safeTitle}"] --> B["Chart request received"]\n  B --> C["Jarvis will show a safe fallback if syntax fails"]`;
 }
 
-app.whenReady().then(createWindow);
+if (gotSingleInstanceLock) {
+  app.on("second-instance", (_event, argv) => {
+    if (wantsLogisticsWindow(argv)) {
+      void createLogisticsWindow();
+      return;
+    }
+    if (!summonMainWindow()) {
+      void createWindow();
+    }
+  });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  app.whenReady().then(async () => {
+    if (wantsLogisticsWindow()) {
+      await createLogisticsWindow();
+    } else {
+      await createWindow();
+    }
+    // Cmd+Shift+J summons Jarvis above the pile of windows.
+    globalShortcut.register("CommandOrControl+Shift+J", () => {
+      if (!summonMainWindow()) {
+        void createWindow();
+      }
+    });
+    globalShortcut.register("CommandOrControl+Shift+L", () => {
+      void createLogisticsWindow();
+    });
+  });
 
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    void createWindow();
-  }
-});
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      if (wantsLogisticsWindow()) void createLogisticsWindow();
+      else void createWindow();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      summonMainWindow();
+    } else {
+      void createLogisticsWindow();
+    }
+  });
+}
