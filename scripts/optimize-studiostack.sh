@@ -2,7 +2,14 @@
 # OWC StudioStack + Express 4M2 volume optimizer
 # Run in Terminal (outside Cursor sandbox):
 #   bash "/Volumes/Samsung-2TB/Projects/Projects/jarvis-companion/scripts/optimize-studiostack.sh"
+# Preview only:
+#   bash ".../optimize-studiostack.sh" --dry-run
 set -euo pipefail
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=1
+fi
 
 AI="/Volumes/AI Models"
 ARES="/Volumes/Lexar-ARES"
@@ -11,8 +18,21 @@ FAST_EMPTY="/Volumes/Samsung-1TB"
 CAPACITY="/Volumes/Lexar-4TB"
 TM_VOL="/Volumes/Lexar-3"
 
+run() {
+  if (( DRY_RUN )); then
+    printf '  [dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+    return 0
+  fi
+  "$@"
+}
+
 echo "=============================================="
 echo " OWC StudioStack / Express 4M2 optimizer"
+if (( DRY_RUN )); then
+  echo " DRY RUN — no files, volumes, or Time Machine destinations will change"
+fi
 echo "=============================================="
 echo
 echo "Detected layout:"
@@ -23,6 +43,10 @@ df -h "$AI" "$ARES" "$WORK" "$FAST_EMPTY" "$CAPACITY" 2>/dev/null || true
 echo
 
 confirm() {
+  if (( DRY_RUN )); then
+    echo "$1 [dry-run: yes]"
+    return 0
+  fi
   read -r -p "$1 [y/N] " ans
   [[ "$ans" == "y" || "$ans" == "Y" ]]
 }
@@ -31,22 +55,22 @@ confirm() {
 if confirm "Phase 1: Move Ollama + HuggingFace onto StudioStack NVMe ($AI)?"; then
   if pgrep -xq ollama 2>/dev/null; then
     echo "Stopping ollama..."
-    pkill -x ollama || true
-    sleep 1
+    run pkill -x ollama || true
+    (( DRY_RUN )) || sleep 1
   fi
-  mkdir -p "$AI/Ollama" "$AI/HuggingFace"
+  run mkdir -p "$AI/Ollama" "$AI/HuggingFace"
   if [[ -d "$ARES/Ollama" ]]; then
     echo "→ rsync Ollama..."
-    rsync -a --info=progress2 "$ARES/Ollama/" "$AI/Ollama/"
+    run rsync -a --info=progress2 "$ARES/Ollama/" "$AI/Ollama/"
   fi
   if [[ -d "$ARES/HuggingFace" ]]; then
     echo "→ rsync HuggingFace..."
-    rsync -a --info=progress2 "$ARES/HuggingFace/" "$AI/HuggingFace/"
+    run rsync -a --info=progress2 "$ARES/HuggingFace/" "$AI/HuggingFace/"
   fi
   echo "Verify:"
   du -sh "$AI/exo-models" "$AI/Ollama" "$AI/HuggingFace" 2>/dev/null || true
   if confirm "Delete originals on Lexar-ARES after successful copy?"; then
-    rm -rf "$ARES/Ollama" "$ARES/HuggingFace"
+    run rm -rf "$ARES/Ollama" "$ARES/HuggingFace"
     echo "Cleared Lexar-ARES AI folders."
   fi
 fi
@@ -54,11 +78,14 @@ fi
 # --- Phase 2: Env paths ---
 if confirm "Phase 2: Update ~/.zshrc for EXO_HOME + OLLAMA_MODELS + HF_HOME?"; then
   ZSHRC="$HOME/.zshrc"
-  touch "$ZSHRC"
-  # Remove old EXO/OLLAMA/HF lines we manage
-  grep -v -E '^export (EXO_HOME|OLLAMA_MODELS|HF_HOME|HUGGINGFACE_HUB_CACHE)=' "$ZSHRC" > "$ZSHRC.tmp" || true
-  mv "$ZSHRC.tmp" "$ZSHRC"
-  cat >> "$ZSHRC" <<'EOF'
+  if (( DRY_RUN )); then
+    echo "  [dry-run] rewrite EXO/OLLAMA/HF exports in $ZSHRC"
+  else
+    touch "$ZSHRC"
+    # Remove old EXO/OLLAMA/HF lines we manage
+    grep -v -E '^export (EXO_HOME|OLLAMA_MODELS|HF_HOME|HUGGINGFACE_HUB_CACHE)=' "$ZSHRC" > "$ZSHRC.tmp" || true
+    mv "$ZSHRC.tmp" "$ZSHRC"
+    cat >> "$ZSHRC" <<'EOF'
 
 # OWC StudioStack AI volume (Fanxiang NVMe — fastest external)
 export EXO_HOME="/Volumes/AI Models/exo-models"
@@ -66,32 +93,36 @@ export OLLAMA_MODELS="/Volumes/AI Models/Ollama"
 export HF_HOME="/Volumes/AI Models/HuggingFace"
 export HUGGINGFACE_HUB_CACHE="/Volumes/AI Models/HuggingFace"
 EOF
-  echo "Updated $ZSHRC — open a new terminal tab to pick up env."
+    echo "Updated $ZSHRC — open a new terminal tab to pick up env."
+  fi
 fi
 
 # --- Phase 3: Capacity folders on Lexar-4TB + tidy work drive ---
 if confirm "Phase 3: Create role folders on Lexar-4TB and tidy Samsung-2TB installers?"; then
-  mkdir -p "$CAPACITY"/{Media,Archives,TimeMachine,Incoming}
-  mkdir -p "$WORK/Archives/Installers" "$WORK/scratch" "$FAST_EMPTY/Scratch"
+  run mkdir -p "$CAPACITY"/{Media,Archives,TimeMachine,Incoming}
+  run mkdir -p "$WORK/Archives/Installers" "$WORK/scratch" "$FAST_EMPTY/Scratch"
   # Move loose DMGs/PKGs on Samsung-2TB root into Archives/Installers
   shopt -s nullglob
   moved=0
   for f in "$WORK"/*.dmg "$WORK"/*.pkg "$WORK"/*.exe; do
     [[ -e "$f" ]] || continue
-    mv -n "$f" "$WORK/Archives/Installers/" && echo "  moved $(basename "$f")" && moved=$((moved+1))
+    if (( DRY_RUN )); then
+      echo "  [dry-run] mv -n $f $WORK/Archives/Installers/"
+      moved=$((moved+1))
+    else
+      mv -n "$f" "$WORK/Archives/Installers/" && echo "  moved $(basename "$f")" && moved=$((moved+1))
+    fi
   done
   echo "Moved $moved installer(s). Capacity folders ready on Lexar-4TB."
 fi
 
 # --- Phase 4: Rename volumes for clarity ---
 if confirm "Phase 4: Rename volumes to role names? (diskutil)"; then
-  # StudioStack NVMe
-  diskutil rename "$AI" "StudioStack-AI" || true
-  # Express 4M2 roles
-  diskutil rename "$WORK" "Work-2TB" || true
-  diskutil rename "$FAST_EMPTY" "Scratch-1TB" || true
-  diskutil rename "$ARES" "Cache-ARES" || true
-  diskutil rename "$CAPACITY" "Media-4TB" || true
+  run diskutil rename "$AI" "StudioStack-AI" || true
+  run diskutil rename "$WORK" "Work-2TB" || true
+  run diskutil rename "$FAST_EMPTY" "Scratch-1TB" || true
+  run diskutil rename "$ARES" "Cache-ARES" || true
+  run diskutil rename "$CAPACITY" "Media-4TB" || true
   echo "Note: update ~/.zshrc paths if you renamed AI volume."
   echo "Current mounts:"
   ls /Volumes
@@ -108,10 +139,9 @@ echo "       StudioStack-AI gets the full ~1TB."
 echo "  tmutil currently reports: no destinations configured"
 echo "  (Lexar-3 still has leftover TM local backups / inheritance files)."
 if confirm "Set Time Machine destination to Lexar-4TB/TimeMachine and start backup?"; then
-  mkdir -p "$CAPACITY/TimeMachine"
-  # Prefer whole volume as TM dest when empty/dedicated
-  sudo tmutil setdestination -a "$CAPACITY"
-  sudo tmutil startbackup --auto
+  run mkdir -p "$CAPACITY/TimeMachine"
+  run sudo tmutil setdestination -a "$CAPACITY"
+  run sudo tmutil startbackup --auto
   echo "Time Machine destination set. Monitor via: tmutil status"
 fi
 
@@ -119,11 +149,15 @@ if confirm "AFTER a successful new TM backup — delete Lexar-3 volume to free F
   echo "This erases old TM history on Lexar-3."
   if confirm "Type confirmation: really erase Lexar-3 now?"; then
     # Find device node for Lexar-3
-    DEV=$(df "$TM_VOL" | awk 'NR==2{print $1}')
-    echo "Unmounting and deleting APFS volume $DEV ..."
-    diskutil unmount force "$TM_VOL" || true
-    diskutil apfs deleteVolume "$DEV"
-    echo "Done. AI Models container should now reclaim space — verify in Disk Utility."
+    DEV=$(df "$TM_VOL" 2>/dev/null | awk 'NR==2{print $1}')
+    if [[ -z "${DEV:-}" ]]; then
+      echo "Lexar-3 is not mounted — skip delete."
+    else
+      echo "Unmounting and deleting APFS volume $DEV ..."
+      run diskutil unmount force "$TM_VOL" || true
+      run diskutil apfs deleteVolume "$DEV"
+      echo "Done. AI Models container should now reclaim space — verify in Disk Utility."
+    fi
   fi
 fi
 
