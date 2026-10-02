@@ -18,13 +18,22 @@ export function RickyFace({ mood, mouthShape }: RickyFaceProps) {
           "--mouth-teeth": mouthShape.teeth.toFixed(3),
         } as CSSProperties
       }
-      aria-label={`Ricky mood: ${mood}`}
+      aria-label={`Jarvis mood: ${mood}`}
     >
+      <div className="hud-grid" aria-hidden="true" />
+      <div className="hud-core" aria-hidden="true" />
+      <div className="hud-scan" aria-hidden="true" />
+      <div className="hud-ring hud-ring-outer" aria-hidden="true" />
+      <div className="hud-ring hud-ring-ticks" aria-hidden="true" />
+      <div className="hud-ring hud-ring-inner" aria-hidden="true" />
+      <div className="hud-callsign" aria-hidden="true">
+        J.A.R.V.I.S.
+      </div>
       <div className="eye-row">
-        <div className="eye">
+        <div className="eye eye-left">
           <span />
         </div>
-        <div className="eye">
+        <div className="eye eye-right">
           <span />
         </div>
       </div>
@@ -34,6 +43,7 @@ export function RickyFace({ mood, mouthShape }: RickyFaceProps) {
           <div className="mouth-line" />
         </div>
       </div>
+      <div className="hud-status-arc" aria-hidden="true" />
     </div>
   );
 }
