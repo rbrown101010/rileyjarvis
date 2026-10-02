@@ -1,6 +1,8 @@
 #!/bin/bash
 # Double-click this file in Finder. It does the StudioStack moves for you.
 # No questions. Close the window when it says DONE.
+# Safer preview (no copies, deletes, or renames):
+#   bash "$(dirname "$0")/optimize-studiostack.sh" --dry-run
 
 set -euo pipefail
 cd "$HOME"
